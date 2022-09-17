@@ -17,13 +17,15 @@ class Post(BaseModel):
     content: str
     published: bool = True
 
+#Create a connection to the database instance with psycopg
 while True:
     try:
         conn = psycopg2.connect(
-            host='',
+            host='localhost',
             database='fastaspi',
             user='postgres',
-            password='',
+            password='june41998',
+            cursor_factory=RealDictCursor
         )
         cursor = conn.cursor()
         print("Database connection was successful")
@@ -34,20 +36,6 @@ while True:
         time.sleep(2)
 
 
-my_posts = [{"title": "Title of the first post", "content": "content of the first post", "id": 1}, {"title": "favorite foods", 
-"content": "I like Pizza", "id": 2}]
-
-#Function to find a particular post
-def find_post(id):
-    for post in my_posts:
-        if post['id'] == id:
-            return post
-
-def find_index_post(id):
-    for i, p in enumerate(my_posts):
-        if p['id'] == id:
-            return i
-
 #This is the root path for the API being created
 @app.get("/")
 def root():
@@ -56,22 +44,38 @@ def root():
 #This is the path for getting all the available posts
 @app.get("/posts")
 def get_posts():
-    return {"data": my_posts}
+    cursor.execute(
+        """SELECT * FROM posts"""
+    )
+    posts = cursor.fetchall()
+    print(posts)
+    return {"data": posts}
 
 #This is the path for creating a post
 #Note: changing the default status code for a particular path operation
 @app.post("/posts", status_code=status.HTTP_201_CREATED)
 def create_posts(post: Post):
-    post_dict = post.dict()
-    post_dict['id'] = randrange(0, 10000000)
-    my_posts.append(post_dict)
-    return {"data": post_dict}
+    cursor.execute(
+        """INSERT INTO posts (title, content, published) VALUES (%s, %s, %s) RETURNING *""",
+        (post.title, post.content, post.published) # The order matters
+    )
+    #Note that the above is done to prevent SQL injection into the connected database
+    new_post = cursor.fetchone()
+
+    #It is important to note that changes to the database has to be commited to be reflected in the database server
+    conn.commit()
+    return {"data": new_post}
 
 #Creating an endpoint with a path parameter
 #Make sure to be careful of path parameters and the ordering with other routed paths. Order matters!!
 @app.get("/posts/{id}")
-def get_post(id: int, response: Response):
-    post = find_post(id)
+def get_post(id: int):
+    cursor.execute(
+        """SELECT * FROM posts WHERE id = %s""",
+        #It is important to convert the id back to a string
+        (str(id))
+    )
+    post = cursor.fetchone()
     if not post:
         #There is a HTTPException funstion from fast API
         raise HTTPException(
@@ -84,23 +88,32 @@ def get_post(id: int, response: Response):
 
 @app.delete("/posts/{id}")
 def delete_post(id: int):
-    index = find_index_post(id)
+    cursor.execute(
+        """DELETE FROM posts WHERE id = %s RETURNING *""",
+        (str(id))
+    )
+    deleted_post = cursor.fetchone()
+    conn.commit()
 
-    my_posts.pop(index)
+    if deleted_post == None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"post with id: {id} deos not exist"
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 @app.put("/posts/{id}")
 def update_post(id: int, post: Post):
-    index = find_index_post(id)
-
-    if index == None:
+    cursor.execute(
+        """UPDATE posts SET title=%s, content=%s, published=%s WHERE id=%s RETURNING *""",
+        (post.title, post.content, post.published, str(id))
+    )
+    updated_post = cursor.fetchone()
+    conn.commit()
+    if update_post == None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"post with id: {id} was not found"
         )
 
-    post_dict = post.dict()
-    post_dict['id'] = id
-    my_posts[index] = post_dict
-
-    return {"data": post_dict}
+    return {"data": updated_post}
