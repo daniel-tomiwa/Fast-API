@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, EmailStr
+from pydantic.types import conint
 
 #Creating a model for the post entity
 class PostBase(BaseModel):
@@ -28,6 +29,13 @@ class PostResponse(PostBase):
     class Config:
         orm_mode = True
 
+class PostVote(BaseModel):
+    Post: PostResponse
+    votes: int
+
+    class Config:
+        orm_mode = True
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -42,3 +50,7 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     id: Optional[str] = None
+
+class Vote(BaseModel):
+    post_id: int
+    dir: conint(le=1)
